@@ -4,6 +4,7 @@ import { useLoadScript, GoogleMap, Marker, InfoWindow } from '@react-google-maps
 import { useMemo, useState, useRef } from 'react';
 import type { Landmark } from '@/types/landmarks';
 import { Button } from "@/components/ui/button";
+import { PolygonPoint } from '@/actions/landmarks';
 
 const mapContainerStyle = {
   width: '100%',
@@ -24,9 +25,10 @@ const mapOptions = {
 
 interface LandmarksMapProps {
   landmarks: Landmark[];
+  onPolygonChange: (points: PolygonPoint[] | null) => void | Promise<void>;
 }
 
-export function LandmarksMap({ landmarks }: LandmarksMapProps) {
+export function LandmarksMap({ landmarks, onPolygonChange }: LandmarksMapProps) {
   const [hoveredMarker, setHoveredMarker] = useState<Landmark | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const drawingManagerRef = useRef<google.maps.drawing.DrawingManager | null>(null);
@@ -81,6 +83,18 @@ export function LandmarksMap({ landmarks }: LandmarksMapProps) {
         polygonRef.current = polygon;
         setIsDrawing(false);
         drawingManager.setDrawingMode(null);
+
+        const path = polygon.getPath();
+        const points: PolygonPoint[] = [];
+        for (let i = 0; i < path.getLength(); i++) {
+          const vertex = path.getAt(i);
+          points.push({
+            lat: vertex.lat(),
+            lng: vertex.lng(),
+          });
+        }
+
+        onPolygonChange(points);
       }
     );
   };
@@ -95,6 +109,7 @@ export function LandmarksMap({ landmarks }: LandmarksMapProps) {
       if (polygonRef.current) {
         polygonRef.current.setMap(null);
         polygonRef.current = null;
+        onPolygonChange(null);
       }
     }
     setIsDrawing(!isDrawing);

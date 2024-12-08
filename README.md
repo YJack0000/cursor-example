@@ -33,3 +33,7 @@
 ```
 我希望只會 query 出我畫出來的範圍內的 landmarks。我希望在寫一個 postgres 的 script 來安裝 GIS 相關的套件，並且新增一個欄位儲存存經緯度，這樣就可以對 postgres 做 polygon search。
 ```
+
+```
+我希望每次畫出一個區域了時候要 query 出範圍內的 data。透過現在的 postgres 跟 map
+```

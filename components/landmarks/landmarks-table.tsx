@@ -11,10 +11,10 @@ import {
 import type { Landmark } from "@/types/landmarks"
 
 interface LandmarksTableProps {
-  initialData: Landmark[]
+  data: Landmark[]
 }
 
-export function LandmarksTable({ initialData }: LandmarksTableProps) {
+export function LandmarksTable({ data }: LandmarksTableProps) {
   return (
     <div className="rounded-md border">
       <Table>
@@ -28,7 +28,7 @@ export function LandmarksTable({ initialData }: LandmarksTableProps) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {initialData.map((landmark, index) => (
+          {data.map((landmark, index) => (
             <TableRow key={index}>
               <TableCell className="font-medium">{landmark.名稱}</TableCell>
               <TableCell>{landmark.地址}</TableCell>

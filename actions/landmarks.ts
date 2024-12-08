@@ -9,15 +9,20 @@ export interface PolygonPoint {
 }
 
 export async function getLandmarksInPolygon(points: PolygonPoint[]): Promise<Landmark[]> {
-  if (!points.length) {
+  if (!points?.length) {
     return getLandmarks();
   }
 
   try {
     // 構建多邊形的 WKT (Well-Known Text) 表示
-    const polygonPoints = [...points, points[0]] // 閉合多邊形
+    // Make sure to properly format the polygon points and close the polygon
+    const polygonPoints = points
       .map(p => `${p.lng} ${p.lat}`)
       .join(',');
+    
+    // Add the first point again to close the polygon
+    const firstPoint = points[0];
+    const closedPolygonPoints = `${polygonPoints},${firstPoint.lng} ${firstPoint.lat}`;
     
     const result = await db.query(`
       SELECT 
@@ -28,7 +33,7 @@ export async function getLandmarksInPolygon(points: PolygonPoint[]): Promise<Lan
         types as "類型"
       FROM properties
       WHERE ST_Contains(
-        ST_GeomFromText('POLYGON((${polygonPoints}))', 4326),
+        ST_GeomFromText('POLYGON((${closedPolygonPoints}))', 4326),
         geom
       )
       ORDER BY name ASC
