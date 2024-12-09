@@ -113,6 +113,8 @@ export function LandmarksMap({ landmarks, onPolygonChange }: LandmarksMapProps) 
       if (currentPath.length > 2) {
         const closedPath = [...currentPath, currentPath[0]];
 
+        console.log('closedPath.length', closedPath.length);
+        console.log(closedPath);
         setCurrentPath(closedPath);
         setIsDrawing(false);
         onPolygonChange(closedPath);
