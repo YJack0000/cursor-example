@@ -1,26 +1,35 @@
 'use client'
 
-import { useLoadScript, GoogleMap, Marker, InfoWindow } from '@react-google-maps/api';
-import { useMemo, useState, useRef } from 'react';
+import { useLoadScript, GoogleMap, Marker, InfoWindow, Polyline } from '@react-google-maps/api';
+import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import type { Landmark } from '@/types/landmarks';
 import { Button } from "@/components/ui/button";
 import { PolygonPoint } from '@/actions/landmarks';
 
-const mapContainerStyle = {
+const GOOGLE_MAPS_LIBRARIES: ["geometry"] = ["geometry"];
+
+const MAP_CONTAINER_STYLE = {
   width: '100%',
-  height: '500px',
+  height: '500px'
 };
 
-const mapOptions = {
-  styles: [
-    {
-      featureType: "poi",
-      elementType: "labels",
-      stylers: [{ visibility: "off" }],
-    },
-  ],
+const BASE_MAP_OPTIONS = {
   disableDefaultUI: true,
   zoomControl: true,
+  styles: [
+    {
+      featureType: 'poi',
+      stylers: [{ visibility: 'off' }]
+    }
+  ]
+};
+
+const DRAWING_MAP_OPTIONS = {
+  ...BASE_MAP_OPTIONS,
+  draggableCursor: 'crosshair',
+  draggable: false,
+  scrollwheel: false,
+  disableDoubleClickZoom: true,
 };
 
 interface LandmarksMapProps {
@@ -31,89 +40,91 @@ interface LandmarksMapProps {
 export function LandmarksMap({ landmarks, onPolygonChange }: LandmarksMapProps) {
   const [hoveredMarker, setHoveredMarker] = useState<Landmark | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  const drawingManagerRef = useRef<google.maps.drawing.DrawingManager | null>(null);
-  const polygonRef = useRef<google.maps.Polygon | null>(null);
-  
+  const [currentPath, setCurrentPath] = useState<PolygonPoint[]>([]);
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const isMouseDown = useRef(false);
+
   const { isLoaded, loadError } = useLoadScript({
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '',
-    libraries: ['drawing']
+    libraries: GOOGLE_MAPS_LIBRARIES
   });
 
-  const center = useMemo(() => {
-    if (landmarks.length === 0) return { lat: 24.7869, lng: 120.9968 };
-    
-    const total = landmarks.reduce(
-      (acc, landmark) => ({
-        lat: acc.lat + Number(landmark.緯度),
-        lng: acc.lng + Number(landmark.經度),
-      }),
-      { lat: 0, lng: 0 }
-    );
+  const center = useMemo(() => ({
+    lat: 24.7865972,
+    lng: 120.9982083
+  }), []);
 
-    return {
-      lat: total.lat / landmarks.length,
-      lng: total.lng / landmarks.length,
-    };
-  }, [landmarks]);
+  const calculateDistance = useCallback((p1: PolygonPoint, p2: PolygonPoint) => {
+    return Math.sqrt(Math.pow(p2.lat - p1.lat, 2) + Math.pow(p2.lng - p1.lng, 2));
+  }, []);
 
-  const onLoad = (map: google.maps.Map) => {
-    const drawingManager = new google.maps.drawing.DrawingManager({
-      drawingMode: null,
-      drawingControl: false,
-      polygonOptions: {
-        fillColor: '#FF0000',
-        fillOpacity: 0.2,
-        strokeWeight: 2,
-        strokeColor: '#FF0000',
-        clickable: false,
-        editable: false,
-        zIndex: 1,
-      },
-    });
-    drawingManager.setMap(map);
-    drawingManagerRef.current = drawingManager;
-
-    google.maps.event.addListener(
-      drawingManager, 
-      'polygoncomplete', 
-      (polygon: google.maps.Polygon) => {
-        if (polygonRef.current) {
-          polygonRef.current.setMap(null);
-        }
-        polygonRef.current = polygon;
-        setIsDrawing(false);
-        drawingManager.setDrawingMode(null);
-
-        const path = polygon.getPath();
-        const points: PolygonPoint[] = [];
-        for (let i = 0; i < path.getLength(); i++) {
-          const vertex = path.getAt(i);
-          points.push({
-            lat: vertex.lat(),
-            lng: vertex.lng(),
-          });
-        }
-
-        onPolygonChange(points);
-      }
-    );
-  };
-
-  const handleDrawClick = () => {
-    if (!drawingManagerRef.current) return;
-    
-    if (!isDrawing) {
-      drawingManagerRef.current.setDrawingMode(google.maps.drawing.OverlayType.POLYGON);
-    } else {
-      drawingManagerRef.current.setDrawingMode(null);
-      if (polygonRef.current) {
-        polygonRef.current.setMap(null);
-        polygonRef.current = null;
-        onPolygonChange(null);
-      }
+  const handleMouseDown = useCallback((e: google.maps.MapMouseEvent) => {
+    if (!isDrawing || !e.latLng) return;
+    const mouseEvent = e.domEvent as MouseEvent;
+    if (mouseEvent.button === 0) { // Left click only
+      isMouseDown.current = true;
+      setCurrentPath([{
+        lat: e.latLng.lat(),
+        lng: e.latLng.lng()
+      }]);
     }
-    setIsDrawing(!isDrawing);
-  };
+  }, [isDrawing]);
+
+  const handleMouseMove = useCallback((e: google.maps.MapMouseEvent) => {
+    if (!isDrawing || !isMouseDown.current || !e.latLng) return;
+
+    const newPoint = {
+      lat: e.latLng.lat(),
+      lng: e.latLng.lng()
+    };
+
+    setCurrentPath(prev => {
+      const lastPoint = prev[prev.length - 1];
+      if (lastPoint && calculateDistance(lastPoint, newPoint) < 0.0001) {
+        return prev;
+      }
+      return [...prev, newPoint];
+    });
+  }, [isDrawing, calculateDistance]);
+
+  const handleDrawClick = useCallback(() => {
+    if (!isDrawing) {
+      setIsDrawing(true);
+      setHoveredMarker(null);
+      setCurrentPath([]);
+      onPolygonChange(null);
+    } else {
+      setIsDrawing(false);
+      setCurrentPath([]);
+      onPolygonChange(null);
+    }
+  }, [isDrawing, onPolygonChange]);
+
+  const handleMapLoad = useCallback((map: google.maps.Map) => {
+    mapRef.current = map;
+  }, []);
+
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      if (!isDrawing || !isMouseDown.current) return;
+
+      isMouseDown.current = false;
+
+      if (currentPath.length > 2) {
+        const closedPath = [...currentPath, currentPath[0]];
+
+        setCurrentPath(closedPath);
+        setIsDrawing(false);
+        onPolygonChange(closedPath);
+      }
+    };
+
+    document.addEventListener('mouseup', handleGlobalMouseUp);
+
+    return () => {
+      document.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [isDrawing, currentPath, onPolygonChange]);
 
   if (loadError) return <div>Error loading maps</div>;
   if (!isLoaded) return <div>Loading maps...</div>;
@@ -128,13 +139,15 @@ export function LandmarksMap({ landmarks, onPolygonChange }: LandmarksMapProps) 
       </Button>
       <div className="rounded-md border">
         <GoogleMap
-          mapContainerStyle={mapContainerStyle}
+          mapContainerStyle={MAP_CONTAINER_STYLE}
           zoom={15}
           center={center}
-          options={mapOptions}
-          onLoad={onLoad}
+          options={isDrawing ? DRAWING_MAP_OPTIONS : BASE_MAP_OPTIONS}
+          onLoad={handleMapLoad}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
         >
-          {landmarks.map((landmark, index) => (
+          {!isDrawing && landmarks.map((landmark, index) => (
             <Marker
               key={index}
               position={{
@@ -145,7 +158,8 @@ export function LandmarksMap({ landmarks, onPolygonChange }: LandmarksMapProps) 
               onMouseOut={() => setHoveredMarker(null)}
             />
           ))}
-          {hoveredMarker && (
+          
+          {!isDrawing && hoveredMarker && (
             <InfoWindow
               position={{
                 lat: Number(hoveredMarker.緯度),
@@ -158,6 +172,17 @@ export function LandmarksMap({ landmarks, onPolygonChange }: LandmarksMapProps) 
                 <p>{hoveredMarker.地址}</p>
               </div>
             </InfoWindow>
+          )}
+
+          {currentPath.length > 1 && (
+            <Polyline
+              path={currentPath}
+              options={{
+                strokeColor: '#FF0000',
+                strokeWeight: 2,
+                strokeOpacity: 1
+              }}
+            />
           )}
         </GoogleMap>
       </div>
